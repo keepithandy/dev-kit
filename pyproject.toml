@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dev-kit"
+version = "0.1.0"
+description = "Read-only Python tooling for local project audits and release hygiene."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "keepithandy" }]
+keywords = ["cli", "tooling", "audit", "release", "portfolio"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.scripts]
+dev-kit = "dev_kit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
