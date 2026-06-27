@@ -16,7 +16,7 @@ from dev_kit.auditors import (
     resolve_audit_profile,
     summarize,
 )
-from dev_kit.cli import main as cli_main
+from dev_kit.cli import EXIT_AUDIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE_ERROR, main as cli_main
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures"
 
@@ -35,10 +35,14 @@ def snapshot_fixture(root: Path) -> dict[Path, str]:
 
 class AuditorTests(unittest.TestCase):
     def run_cli(self, *args: str) -> tuple[int, str]:
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            exit_code = cli_main(list(args))
-        return exit_code, output.getvalue()
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                exit_code = cli_main(list(args))
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+        return exit_code, stdout.getvalue() + stderr.getvalue()
 
     def test_extract_version_labels_keeps_unique_order(self):
         text = "v1.2.3, v1.2.3, v1.2.4"
@@ -90,14 +94,14 @@ class AuditorTests(unittest.TestCase):
     def test_audit_cli_uses_clean_fixture(self):
         exit_code, output = self.run_cli("audit", "--path", str(fixture_path("clean_project")))
 
-        self.assertEqual(exit_code, 0, f"audit CLI should pass for clean_project. Output:\n{output}")
+        self.assertEqual(exit_code, EXIT_SUCCESS, f"audit CLI should pass for clean_project. Output:\n{output}")
         self.assertIn("FAIL 0", output)
         self.assertIn("[PASS] project path", output)
 
     def test_version_cli_uses_mismatched_fixture(self):
         exit_code, output = self.run_cli("version", "--path", str(fixture_path("mismatched_version_project")))
 
-        self.assertEqual(exit_code, 1, f"version CLI should fail for mismatched_version_project. Output:\n{output}")
+        self.assertEqual(exit_code, EXIT_AUDIT_FAILURE, f"version CLI should fail for mismatched_version_project. Output:\n{output}")
         self.assertIn("[FAIL] version:app.js", output)
         self.assertIn("Expected v0.1.0", output)
 
@@ -110,7 +114,7 @@ class AuditorTests(unittest.TestCase):
             exit_code, output = self.run_cli("report", "--path", str(root), "--output", str(output_path))
             report = output_path.read_text(encoding="utf-8")
 
-        self.assertEqual(exit_code, 0, f"report CLI should pass for clean_project. Output:\n{output}")
+        self.assertEqual(exit_code, EXIT_SUCCESS, f"report CLI should pass for clean_project. Output:\n{output}")
         self.assertIn("Wrote report:", output)
         self.assertIn("# dev-kit Audit Report", report)
         self.assertIn("- FAIL: 0", report)
@@ -167,9 +171,44 @@ class AuditorTests(unittest.TestCase):
             "dungeondex",
         )
 
-        self.assertEqual(exit_code, 0, f"dungeondex alias should pass for browser_game_static_project. Output:\n{output}")
+        self.assertEqual(exit_code, EXIT_SUCCESS, f"dungeondex alias should pass for browser_game_static_project. Output:\n{output}")
         self.assertIn("[PASS] audit profile", output)
         self.assertIn("browser-game-static", output)
+
+    def test_audit_cli_invalid_path_returns_usage_error_without_traceback(self):
+        missing_path = fixture_path("does_not_exist")
+
+        exit_code, output = self.run_cli("audit", "--path", str(missing_path))
+
+        self.assertEqual(exit_code, EXIT_USAGE_ERROR)
+        self.assertIn("ERROR: Project path does not exist:", output)
+        self.assertNotIn("Traceback", output)
+
+    def test_version_cli_file_path_returns_usage_error(self):
+        file_path = fixture_path("clean_project") / "VERSION.md"
+
+        exit_code, output = self.run_cli("version", "--path", str(file_path))
+
+        self.assertEqual(exit_code, EXIT_USAGE_ERROR)
+        self.assertIn("ERROR: Project path is not a directory:", output)
+        self.assertNotIn("Traceback", output)
+
+    def test_unknown_profile_returns_usage_error(self):
+        exit_code, output = self.run_cli("audit", "--path", str(fixture_path("clean_project")), "--profile", "missing-profile")
+
+        self.assertEqual(exit_code, EXIT_USAGE_ERROR)
+        self.assertIn("ERROR: Unknown audit profile 'missing-profile'.", output)
+        self.assertNotIn("Traceback", output)
+
+    def test_report_cli_missing_output_directory_returns_usage_error(self):
+        root = fixture_path("clean_project")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "missing" / "devkit-report.md"
+            exit_code, output = self.run_cli("report", "--path", str(root), "--output", str(output_path))
+
+        self.assertEqual(exit_code, EXIT_USAGE_ERROR)
+        self.assertIn("ERROR: Output directory does not exist:", output)
+        self.assertNotIn("Traceback", output)
 
 
 if __name__ == "__main__":

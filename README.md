@@ -105,6 +105,19 @@ The `browser-game-static` / `dungeondex` profile checks for:
 
 The profile also keeps version-label checks read-only and compares `VERSION.md` against common runtime label files.
 
+## Exit codes
+
+`dev-kit` uses stable exit codes so PowerShell, scripts, and future CI jobs can tell the difference between an audit result and a command problem.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Command completed and no failing audit checks were found. |
+| `1` | Command completed, but at least one audit check failed. |
+| `2` | Usage or input error, such as an invalid `--path`, unknown profile, missing output directory, or bad command arguments. |
+| `3` | Runtime or file-system error, such as being unable to write the requested report file. |
+
+Friendly CLI errors are printed as `ERROR: ...` without raw Python tracebacks.
+
 ## Report output
 
 The report command creates or overwrites the file named by `--output`:
