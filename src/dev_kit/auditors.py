@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Iterable
@@ -207,15 +208,94 @@ def summarize(results: Iterable[CheckResult]) -> dict[str, int]:
     return summary
 
 
-def render_markdown(root: str | Path, results: Iterable[CheckResult]) -> str:
+def _result_group(result: CheckResult) -> str:
+    if result.name == "project path":
+        return "Project"
+    if result.name == "audit profile":
+        return "Audit profile"
+    if result.name.startswith("file:"):
+        return "Baseline files"
+    if result.name.startswith("version:"):
+        return "Version labels"
+    if result.name.startswith("profile:"):
+        return "Profile checks"
+    return "Other checks"
+
+
+def summarize_by_group(results: Iterable[CheckResult]) -> dict[str, dict[str, int]]:
+    """Return PASS/WARN/FAIL counts grouped by audit area."""
+
+    grouped: dict[str, dict[str, int]] = {}
+    for result in results:
+        group = _result_group(result)
+        grouped.setdefault(group, {"PASS": 0, "WARN": 0, "FAIL": 0})
+        grouped[group][result.status] = grouped[group].get(result.status, 0) + 1
+    return grouped
+
+
+def _overall_status(counts: dict[str, int]) -> str:
+    if counts.get("FAIL", 0):
+        return "FAIL"
+    if counts.get("WARN", 0):
+        return "WARN"
+    return "PASS"
+
+
+def _format_generated_at(generated_at: datetime | str | None) -> str:
+    if generated_at is None:
+        generated_at = datetime.now(timezone.utc)
+    if isinstance(generated_at, datetime):
+        return generated_at.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return generated_at
+
+
+def _section_results(results: Iterable[CheckResult], prefix: str) -> list[CheckResult]:
+    return [result for result in results if result.name.startswith(prefix)]
+
+
+def _next_actions(results: list[CheckResult]) -> list[str]:
+    actions: list[str] = []
+    failures = [result for result in results if result.status == "FAIL"]
+    warnings = [result for result in results if result.status == "WARN"]
+
+    if not failures and not warnings:
+        return ["No action required. The audit completed without warnings or failures."]
+
+    if any(result.name.startswith("version:") for result in failures):
+        actions.append("Align mismatched version labels before release.")
+
+    if any(result.name.startswith("file:") for result in warnings):
+        actions.append("Review missing baseline files and decide whether they should be added or documented as intentionally absent.")
+
+    if any(result.name == "profile:smoke scripts" for result in warnings):
+        actions.append("Add or restore at least one root-level smoke script if this project should have a smoke-test safety net.")
+
+    if failures and not actions:
+        actions.append("Fix failing checks before treating this project as release-ready.")
+
+    if warnings and not actions:
+        actions.append("Review warning checks before release; warnings may be acceptable if they are intentional.")
+
+    return actions
+
+
+def render_markdown(
+    root: str | Path,
+    results: Iterable[CheckResult],
+    generated_at: datetime | str | None = None,
+) -> str:
     result_list = list(results)
     counts = summarize(result_list)
+    grouped_counts = summarize_by_group(result_list)
     project_root = Path(root).expanduser().resolve()
+    status = _overall_status(counts)
 
     lines = [
         "# dev-kit Audit Report",
         "",
-        f"Project: `{project_root}`",
+        f"- Project: `{project_root}`",
+        f"- Generated: `{_format_generated_at(generated_at)}`",
+        f"- Overall status: **{status}**",
         "",
         "## Summary",
         "",
@@ -223,10 +303,33 @@ def render_markdown(root: str | Path, results: Iterable[CheckResult]) -> str:
         f"- WARN: {counts.get('WARN', 0)}",
         f"- FAIL: {counts.get('FAIL', 0)}",
         "",
-        "## Checks",
+        "## Audit Groups",
         "",
     ]
 
+    for group, group_counts in grouped_counts.items():
+        lines.append(
+            f"- **{group}**: PASS {group_counts.get('PASS', 0)} | "
+            f"WARN {group_counts.get('WARN', 0)} | FAIL {group_counts.get('FAIL', 0)}"
+        )
+
+    version_results = _section_results(result_list, "version:")
+    if version_results:
+        lines.extend(["", "## Version-label Checks", ""])
+        for result in version_results:
+            lines.append(f"- **{result.status}** `{result.name}` - {result.detail}")
+
+    baseline_results = _section_results(result_list, "file:")
+    if baseline_results:
+        lines.extend(["", "## Baseline File Checks", ""])
+        for result in baseline_results:
+            lines.append(f"- **{result.status}** `{result.name}` - {result.detail}")
+
+    lines.extend(["", "## Warnings and Next Actions", ""])
+    for action in _next_actions(result_list):
+        lines.append(f"- {action}")
+
+    lines.extend(["", "## All Checks", ""])
     for result in result_list:
         lines.append(f"- **{result.status}** `{result.name}` - {result.detail}")
 

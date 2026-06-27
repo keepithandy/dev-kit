@@ -15,6 +15,7 @@ from dev_kit.auditors import (
     render_markdown,
     resolve_audit_profile,
     summarize,
+    summarize_by_group,
 )
 from dev_kit.cli import EXIT_AUDIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE_ERROR, main as cli_main
 
@@ -128,7 +129,29 @@ class AuditorTests(unittest.TestCase):
 
         self.assertGreaterEqual(counts["PASS"], 1)
         self.assertIn("# dev-kit Audit Report", report)
-        self.assertIn("## Checks", report)
+        self.assertIn("## All Checks", report)
+
+    def test_summarize_by_group_reports_audit_areas(self):
+        results = audit_project(fixture_path("browser_game_static_project"), profile="browser-game-static")
+        grouped = summarize_by_group(results)
+
+        self.assertIn("Baseline files", grouped)
+        self.assertIn("Version labels", grouped)
+        self.assertEqual(grouped["Baseline files"]["FAIL"], 0)
+        self.assertEqual(grouped["Version labels"]["FAIL"], 0)
+
+    def test_render_markdown_includes_report_sections_and_next_actions(self):
+        root = fixture_path("missing_file_project")
+        results = audit_project(root, profile="browser-game-static")
+        report = render_markdown(root, results, generated_at="2026-06-27T00:00:00Z")
+
+        self.assertIn("- Generated: `2026-06-27T00:00:00Z`", report)
+        self.assertIn("- Overall status: **WARN**", report)
+        self.assertIn("## Audit Groups", report)
+        self.assertIn("## Version-label Checks", report)
+        self.assertIn("## Baseline File Checks", report)
+        self.assertIn("## Warnings and Next Actions", report)
+        self.assertIn("Review missing baseline files", report)
 
     def test_dungeondex_alias_resolves_to_browser_game_static_profile(self):
         profile = resolve_audit_profile("dungeondex")
