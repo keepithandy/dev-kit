@@ -23,8 +23,9 @@ Run these commands from the `dev-kit` repo folder:
 ```powershell
 python -m pip install -e .
 python -m dev_kit audit --path ..\DungeonDex
+python -m dev_kit audit --path ..\DungeonDex --profile dungeondex
 python -m dev_kit version --path ..\DungeonDex
-python -m dev_kit report --path ..\DungeonDex --output .\devkit-report.md
+python -m dev_kit report --path ..\DungeonDex --profile dungeondex --output .\devkit-report.md
 python -m unittest discover -s tests
 ```
 
@@ -41,8 +42,9 @@ Run these commands from the `dev-kit` repo folder:
 ```bash
 python -m pip install -e .
 python -m dev_kit audit --path ../DungeonDex
+python -m dev_kit audit --path ../DungeonDex --profile dungeondex
 python -m dev_kit version --path ../DungeonDex
-python -m dev_kit report --path ../DungeonDex --output ./devkit-report.md
+python -m dev_kit report --path ../DungeonDex --profile dungeondex --output ./devkit-report.md
 python -m unittest discover -s tests
 ```
 
@@ -73,12 +75,42 @@ The `python -m dev_kit ...` style is used throughout this README because it work
 - `version`: compare `VERSION.md` with runtime files.
 - `report`: write a Markdown audit report to the exact file path passed with `--output`.
 
+## Audit profiles
+
+Profiles let `dev-kit` run checks for a specific kind of project while staying generic and read-only.
+
+Available profiles:
+
+| Profile | Purpose |
+| --- | --- |
+| `default` | General static project audit. Checks `VERSION.md`, `index.html`, `sw.js`, and `app.js`. |
+| `browser-game-static` | Static browser-game audit for HTML/CSS/JS projects with release labels, documentation files, and smoke scripts. |
+| `dungeondex` | Alias for `browser-game-static`, kept copy-friendly for DungeonDex-style projects. |
+
+For DungeonDex-style browser projects, use:
+
+```powershell
+python -m dev_kit audit --path ..\DungeonDex --profile dungeondex
+```
+
+The `browser-game-static` / `dungeondex` profile checks for:
+
+- `VERSION.md`
+- `README.md`
+- `CHANGELOG.md`
+- `index.html`
+- `app.js`
+- `sw.js`
+- at least one root-level `smoke*.mjs` script
+
+The profile also keeps version-label checks read-only and compares `VERSION.md` against common runtime label files.
+
 ## Report output
 
 The report command creates or overwrites the file named by `--output`:
 
 ```powershell
-python -m dev_kit report --path ..\DungeonDex --output .\devkit-report.md
+python -m dev_kit report --path ..\DungeonDex --profile dungeondex --output .\devkit-report.md
 ```
 
 In that PowerShell example, the generated Markdown report is written to:
