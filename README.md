@@ -134,6 +134,18 @@ In that PowerShell example, the generated Markdown report is written to:
 
 The parent folder for `--output` should already exist. Use an explicit path so it is obvious where the report will be written.
 
+Generated reports are structured for pasting into GitHub issues, release notes, or mobile project notes. Current sections include:
+
+- project path, generated timestamp, and overall status
+- PASS / WARN / FAIL summary
+- audit-group summary
+- version-label check results
+- baseline file check results
+- warnings and recommended next actions
+- full check list
+
+Report generation does not modify the audited project. It only creates or overwrites the exact file passed through `--output`.
+
 ## Development
 
 Run the unit tests from the repo root:
