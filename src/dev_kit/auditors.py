@@ -13,6 +13,43 @@ BASELINE_FILES = ("VERSION.md", *STANDARD_RUNTIME_FILES)
 
 
 @dataclass(frozen=True)
+class AuditProfile:
+    """Named read-only audit profile for a project type."""
+
+    name: str
+    description: str
+    baseline_files: tuple[str, ...]
+    runtime_files: tuple[str, ...] = STANDARD_RUNTIME_FILES
+    smoke_patterns: tuple[str, ...] = ()
+
+
+AUDIT_PROFILES: dict[str, AuditProfile] = {
+    "default": AuditProfile(
+        name="default",
+        description="General static project audit.",
+        baseline_files=BASELINE_FILES,
+    ),
+    "browser-game-static": AuditProfile(
+        name="browser-game-static",
+        description="Static browser-game audit for HTML/CSS/JS projects with release labels and smoke scripts.",
+        baseline_files=(
+            "VERSION.md",
+            "README.md",
+            "CHANGELOG.md",
+            "index.html",
+            "app.js",
+            "sw.js",
+        ),
+        smoke_patterns=("smoke*.mjs",),
+    ),
+}
+
+PROFILE_ALIASES = {
+    "dungeondex": "browser-game-static",
+}
+
+
+@dataclass(frozen=True)
 class CheckResult:
     """A single read-only audit result."""
 
@@ -43,6 +80,23 @@ def extract_version_labels(text: str) -> list[str]:
     return labels
 
 
+def available_profile_names() -> tuple[str, ...]:
+    """Return supported audit profile names, including aliases."""
+
+    return tuple(sorted((*AUDIT_PROFILES.keys(), *PROFILE_ALIASES.keys())))
+
+
+def resolve_audit_profile(profile_name: str = "default") -> AuditProfile:
+    """Resolve a profile name or alias into an audit profile."""
+
+    canonical_name = PROFILE_ALIASES.get(profile_name, profile_name)
+    try:
+        return AUDIT_PROFILES[canonical_name]
+    except KeyError as exc:
+        supported = ", ".join(available_profile_names())
+        raise ValueError(f"Unknown audit profile '{profile_name}'. Supported profiles: {supported}.") from exc
+
+
 def canonical_version(root: Path) -> str | None:
     """Read the first version-looking label from VERSION.md, if present."""
 
@@ -59,6 +113,14 @@ def check_project_path(root: Path) -> CheckResult:
     return CheckResult("project path", "FAIL", f"Project directory does not exist: {root}")
 
 
+def check_profile(profile: AuditProfile) -> CheckResult:
+    return CheckResult(
+        "audit profile",
+        "PASS",
+        f"Using '{profile.name}' profile: {profile.description}",
+    )
+
+
 def check_baseline_files(root: Path, expected_files: Iterable[str] = BASELINE_FILES) -> list[CheckResult]:
     results: list[CheckResult] = []
     for relative_path in expected_files:
@@ -68,6 +130,27 @@ def check_baseline_files(root: Path, expected_files: Iterable[str] = BASELINE_FI
         else:
             results.append(CheckResult(f"file:{relative_path}", "WARN", "Missing baseline file."))
     return results
+
+
+def check_smoke_files(root: Path, patterns: Iterable[str]) -> list[CheckResult]:
+    pattern_list = tuple(patterns)
+    if not pattern_list:
+        return []
+
+    matches: list[Path] = []
+    for pattern in pattern_list:
+        matches.extend(path for path in root.glob(pattern) if path.is_file())
+
+    unique_matches = sorted({path.relative_to(root).as_posix() for path in matches})
+    if unique_matches:
+        found = ", ".join(unique_matches[:5])
+        extra_count = len(unique_matches) - 5
+        if extra_count > 0:
+            found = f"{found}, +{extra_count} more"
+        return [CheckResult("profile:smoke scripts", "PASS", f"Found smoke script(s): {found}.")]
+
+    pattern_text = ", ".join(pattern_list)
+    return [CheckResult("profile:smoke scripts", "WARN", f"No smoke scripts matched: {pattern_text}.")]
 
 
 def check_version_sync(root: Path, runtime_files: Iterable[str] = STANDARD_RUNTIME_FILES) -> list[CheckResult]:
@@ -98,18 +181,22 @@ def check_version_sync(root: Path, runtime_files: Iterable[str] = STANDARD_RUNTI
     return results
 
 
-def audit_project(root: str | Path) -> list[CheckResult]:
-    """Run the default read-only project audit suite."""
+def audit_project(root: str | Path, profile: str = "default") -> list[CheckResult]:
+    """Run a read-only project audit suite."""
 
     project_root = Path(root).expanduser().resolve()
     path_result = check_project_path(project_root)
     if path_result.failed:
         return [path_result]
 
+    audit_profile = resolve_audit_profile(profile)
+
     return [
         path_result,
-        *check_baseline_files(project_root),
-        *check_version_sync(project_root),
+        check_profile(audit_profile),
+        *check_baseline_files(project_root, audit_profile.baseline_files),
+        *check_smoke_files(project_root, audit_profile.smoke_patterns),
+        *check_version_sync(project_root, audit_profile.runtime_files),
     ]
 
 

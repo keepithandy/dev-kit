@@ -8,7 +8,14 @@ import unittest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from dev_kit.auditors import audit_project, check_version_sync, extract_version_labels, render_markdown, summarize
+from dev_kit.auditors import (
+    audit_project,
+    check_version_sync,
+    extract_version_labels,
+    render_markdown,
+    resolve_audit_profile,
+    summarize,
+)
 from dev_kit.cli import main as cli_main
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures"
@@ -118,6 +125,51 @@ class AuditorTests(unittest.TestCase):
         self.assertGreaterEqual(counts["PASS"], 1)
         self.assertIn("# dev-kit Audit Report", report)
         self.assertIn("## Checks", report)
+
+    def test_dungeondex_alias_resolves_to_browser_game_static_profile(self):
+        profile = resolve_audit_profile("dungeondex")
+
+        self.assertEqual(profile.name, "browser-game-static")
+        self.assertIn("README.md", profile.baseline_files)
+        self.assertIn("CHANGELOG.md", profile.baseline_files)
+
+    def test_browser_game_static_profile_checks_docs_and_smoke_files(self):
+        root = fixture_path("browser_game_static_project")
+        before = snapshot_fixture(root)
+
+        results = audit_project(root, profile="browser-game-static")
+        counts = summarize(results)
+
+        self.assertEqual(counts["FAIL"], 0, "browser-game-static fixture should not produce FAIL results")
+        self.assertEqual(counts["WARN"], 0, "browser-game-static fixture should not produce WARN results")
+        self.assertTrue(any(result.name == "audit profile" for result in results))
+        self.assertTrue(any(result.name == "profile:smoke scripts" for result in results))
+        self.assertEqual(snapshot_fixture(root), before, "browser_game_static_project fixture files should not be modified")
+
+    def test_browser_game_static_profile_reports_missing_docs_and_smoke_files(self):
+        root = fixture_path("clean_project")
+        before = snapshot_fixture(root)
+
+        results = audit_project(root, profile="browser-game-static")
+        warnings = [result for result in results if result.status == "WARN"]
+
+        self.assertTrue(any(result.name == "file:README.md" for result in warnings))
+        self.assertTrue(any(result.name == "file:CHANGELOG.md" for result in warnings))
+        self.assertTrue(any(result.name == "profile:smoke scripts" for result in warnings))
+        self.assertEqual(snapshot_fixture(root), before, "clean_project fixture files should not be modified")
+
+    def test_audit_cli_accepts_dungeondex_profile_alias(self):
+        exit_code, output = self.run_cli(
+            "audit",
+            "--path",
+            str(fixture_path("browser_game_static_project")),
+            "--profile",
+            "dungeondex",
+        )
+
+        self.assertEqual(exit_code, 0, f"dungeondex alias should pass for browser_game_static_project. Output:\n{output}")
+        self.assertIn("[PASS] audit profile", output)
+        self.assertIn("browser-game-static", output)
 
 
 if __name__ == "__main__":
