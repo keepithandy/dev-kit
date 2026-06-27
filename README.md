@@ -2,13 +2,26 @@
 
 A Python command-line toolkit for read-only project audits and release hygiene.
 
+`dev-kit` helps check whether a local project is ready to ship by inspecting the files that usually drift during release work: version labels, baseline docs, browser entry files, service worker labels, smoke scripts, and generated audit reports. It is built as reusable developer tooling, not a one-off DungeonDex helper.
+
+## What it audits
+
+`dev-kit` currently focuses on practical release-hygiene checks:
+
+- whether expected baseline files are present
+- whether `VERSION.md` agrees with runtime/public version labels
+- whether a static browser-game project has a smoke-test safety net
+- whether a Markdown report can be generated for issue notes, release notes, or project notes
+
+This is useful for DungeonDex now, but the same pattern can support other local repos later, such as NovaDeck, Depth Engine, Guildmasters, or future toolkit projects.
+
 ## Goal
 
-Build a small non-JavaScript tooling repo that can support real project work. The first target is DungeonDex-style repo hygiene: version-label checks, baseline file checks, and Markdown audit reports.
+Build a small non-JavaScript tooling repo that can support real project work across multiple repositories. The first target is DungeonDex-style repo hygiene: version-label checks, baseline file checks, and Markdown audit reports.
 
 ## Safety model
 
-`dev-kit` is designed to inspect local project folders, not rewrite them.
+`dev-kit` is designed to inspect local project folders, not rewrite them. This is intentional: the tool should be safe to run before a release without risking gameplay, app behavior, or repo files.
 
 - `audit` reads the target project and prints audit results.
 - `version` reads `VERSION.md` and common runtime label files, then reports whether they match.
@@ -105,6 +118,17 @@ The `browser-game-static` / `dungeondex` profile checks for:
 
 The profile also keeps version-label checks read-only and compares `VERSION.md` against common runtime label files.
 
+## How this supports a portfolio
+
+`dev-kit` is meant to become the lightweight quality gate for a group of small projects. Instead of remembering release checks by hand for every repo, each project can get a profile and a repeatable command.
+
+Current path:
+
+1. Use the `dungeondex` profile for DungeonDex release hygiene.
+2. Keep the default profile generic for smaller static projects.
+3. Add future profiles only when another repo has a real repeated audit need.
+4. Keep the tool focused on audit, report, and release hygiene instead of broad automation.
+
 ## Exit codes
 
 `dev-kit` uses stable exit codes so PowerShell, scripts, and future CI jobs can tell the difference between an audit result and a command problem.
@@ -143,6 +167,8 @@ Generated reports are structured for pasting into GitHub issues, release notes, 
 - baseline file check results
 - warnings and recommended next actions
 - full check list
+
+See `docs/SAMPLE_REPORT.md` for example report output.
 
 Report generation does not modify the audited project. It only creates or overwrites the exact file passed through `--output`.
 
