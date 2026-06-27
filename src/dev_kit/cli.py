@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "version":
             project_path = _validate_project_path(args.path)
             profile = resolve_audit_profile(args.profile)
-            results = check_version_sync(project_path, profile.runtime_files)
+            results = check_version_sync(project_path, profile.version_files)
             _print_results(results)
             return _exit_code(results)
 
