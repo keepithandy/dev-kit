@@ -7,7 +7,16 @@ import os
 from pathlib import Path
 import sys
 
-from .auditors import audit_project, available_profile_names, check_version_sync, render_markdown, resolve_audit_profile, summarize
+from .auditors import (
+    audit_portfolio,
+    audit_project,
+    available_profile_names,
+    check_version_sync,
+    render_markdown,
+    render_portfolio_markdown,
+    resolve_audit_profile,
+    summarize,
+)
 
 EXIT_SUCCESS = 0
 EXIT_AUDIT_FAILURE = 1
@@ -31,12 +40,35 @@ def _print_results(results) -> None:
         print(f"[{result.status}] {result.name}: {result.detail}")
 
 
+def _print_portfolio_results(summaries) -> None:
+    print(f"Portfolio projects: {len(summaries)}")
+    print("-" * 48)
+    if not summaries:
+        print("[WARN] No immediate child folders looked like projects.")
+        return
+
+    for summary in summaries:
+        counts = summary.counts
+        print(
+            f"[{summary.status}] {summary.name}: "
+            f"PASS {counts.get('PASS', 0)} | WARN {counts.get('WARN', 0)} | FAIL {counts.get('FAIL', 0)}"
+        )
+        for result in summary.results:
+            print(f"  [{result.status}] {result.name}: {result.detail}")
+
+
 def _print_error(message: str) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
 
 
 def _exit_code(results) -> int:
     return EXIT_AUDIT_FAILURE if any(result.failed for result in results) else EXIT_SUCCESS
+
+
+def _portfolio_exit_code(summaries) -> int:
+    if not summaries:
+        return EXIT_AUDIT_FAILURE
+    return EXIT_AUDIT_FAILURE if any(result.failed for summary in summaries for result in summary.results) else EXIT_SUCCESS
 
 
 def _profile_help() -> str:
@@ -103,6 +135,10 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--output", required=True, help="Markdown output path.")
     report_parser.add_argument("--profile", default="default", help=_profile_help())
 
+    portfolio_parser = subparsers.add_parser("portfolio", help="Scan sibling project folders and summarize portfolio hygiene.")
+    portfolio_parser.add_argument("--path", default=".", help="Parent folder containing sibling project folders. Defaults to current directory.")
+    portfolio_parser.add_argument("--output", help="Optional Markdown output path for the portfolio report.")
+
     return parser
 
 
@@ -131,6 +167,16 @@ def main(argv: list[str] | None = None) -> int:
             output_path.write_text(render_markdown(project_path, results), encoding="utf-8")
             print(f"Wrote report: {output_path}")
             return _exit_code(results)
+
+        if args.command == "portfolio":
+            parent_path = _validate_project_path(args.path)
+            summaries = audit_portfolio(parent_path)
+            _print_portfolio_results(summaries)
+            if args.output:
+                output_path = _validate_output_path(args.output)
+                output_path.write_text(render_portfolio_markdown(parent_path, summaries), encoding="utf-8")
+                print(f"Wrote portfolio report: {output_path}")
+            return _portfolio_exit_code(summaries)
     except DevKitCliError as exc:
         _print_error(str(exc))
         return exc.exit_code
