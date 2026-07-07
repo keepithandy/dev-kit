@@ -13,7 +13,13 @@ python -m pip install -e .
 python -m dev_kit audit --path ..\DungeonDex --profile dungeondex
 ```
 
-Generate a Markdown report:
+Scan sibling repos in a parent folder:
+
+```powershell
+python -m dev_kit portfolio --path .. --output .\portfolio-report.md
+```
+
+Generate a Markdown report for one repo:
 
 ```powershell
 python -m dev_kit report --path ..\DungeonDex --profile dungeondex --output .\devkit-report.md
@@ -25,7 +31,7 @@ Run the test suite:
 python -m unittest discover -s tests
 ```
 
-Current status: active tooling repo. The current CLI supports `audit`, `version`, and `report`. Portfolio-wide sibling-repo audit mode is still planned, not implemented.
+Current status: active tooling repo. The current CLI supports `audit`, `version`, `report`, and `portfolio`.
 
 ## What it audits
 
@@ -35,12 +41,13 @@ Current status: active tooling repo. The current CLI supports `audit`, `version`
 - whether `VERSION.md` agrees with runtime/public version labels
 - whether a static browser-game project has a smoke-test safety net
 - whether a Markdown report can be generated for issue notes, release notes, or project notes
+- whether sibling portfolio repos expose README, run, and validation signals
 
 This is useful for DungeonDex now, but the same pattern can support other local repos later, such as NovaDeck, Depth Engine, Guildmasters, or future toolkit projects.
 
 ## Goal
 
-Build a small non-JavaScript tooling repo that can support real project work across multiple repositories. The first target is DungeonDex-style repo hygiene: version-label checks, baseline file checks, and Markdown audit reports.
+Build a small non-JavaScript tooling repo that can support real project work across multiple repositories. The first target is DungeonDex-style repo hygiene: version-label checks, baseline file checks, Markdown audit reports, and lightweight portfolio hygiene summaries.
 
 ## Safety model
 
@@ -49,8 +56,9 @@ Build a small non-JavaScript tooling repo that can support real project work acr
 - `audit` reads the target project and prints audit results.
 - `version` reads `VERSION.md` and common runtime label files, then reports whether they match.
 - `report` reads the target project and writes only the Markdown file you choose with `--output`.
+- `portfolio` reads immediate sibling project folders and writes only the optional Markdown file you choose with `--output`.
 
-If you place the report output inside the audited project, that report file is the only file `dev-kit` should create or overwrite.
+If you place a report output inside an audited project, that report file is the only file `dev-kit` should create or overwrite.
 
 ## Quick start: Windows PowerShell
 
@@ -62,6 +70,7 @@ python -m dev_kit audit --path ..\DungeonDex
 python -m dev_kit audit --path ..\DungeonDex --profile dungeondex
 python -m dev_kit version --path ..\DungeonDex
 python -m dev_kit report --path ..\DungeonDex --profile dungeondex --output .\devkit-report.md
+python -m dev_kit portfolio --path .. --output .\portfolio-report.md
 python -m unittest discover -s tests
 ```
 
@@ -81,6 +90,7 @@ python -m dev_kit audit --path ../DungeonDex
 python -m dev_kit audit --path ../DungeonDex --profile dungeondex
 python -m dev_kit version --path ../DungeonDex
 python -m dev_kit report --path ../DungeonDex --profile dungeondex --output ./devkit-report.md
+python -m dev_kit portfolio --path .. --output ./portfolio-report.md
 python -m unittest discover -s tests
 ```
 
@@ -110,6 +120,7 @@ The `python -m dev_kit ...` style is used throughout this README because it work
 - `audit`: run the default read-only audit suite.
 - `version`: compare `VERSION.md` with runtime files.
 - `report`: write a Markdown audit report to the exact file path passed with `--output`.
+- `portfolio`: scan immediate sibling project folders and summarize README, run-instruction, and validation-command signals.
 
 ## Audit profiles
 
@@ -141,6 +152,22 @@ The `browser-game-static` / `dungeondex` profile checks for:
 
 The profile also keeps version-label checks read-only and compares `VERSION.md` against common runtime label files.
 
+## Portfolio audit mode
+
+Use portfolio mode when several repositories live next to each other in one parent folder:
+
+```powershell
+python -m dev_kit portfolio --path .. --output .\portfolio-report.md
+```
+
+The portfolio command scans immediate child folders that look like projects, then checks whether each one has:
+
+- a README
+- an obvious run or quick-start path
+- an obvious test, smoke, build, or validation signal
+
+Portfolio mode is read-only for scanned projects. It only writes the optional report file when `--output` is provided.
+
 ## How this supports a portfolio
 
 `dev-kit` is meant to become the lightweight quality gate for a group of small projects. Instead of remembering release checks by hand for every repo, each project can get a profile and a repeatable command.
@@ -148,9 +175,10 @@ The profile also keeps version-label checks read-only and compares `VERSION.md` 
 Current path:
 
 1. Use the `dungeondex` profile for DungeonDex release hygiene.
-2. Keep the default profile generic for smaller static projects.
-3. Add future profiles only when another repo has a real repeated audit need.
-4. Keep the tool focused on audit, report, and release hygiene instead of broad automation.
+2. Use `portfolio` mode for broad sibling-repo hygiene sweeps.
+3. Keep the default profile generic for smaller static projects.
+4. Add future profiles only when another repo has a real repeated audit need.
+5. Keep the tool focused on audit, report, and release hygiene instead of broad automation.
 
 ## Exit codes
 
