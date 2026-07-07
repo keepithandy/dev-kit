@@ -4,6 +4,29 @@ A Python command-line toolkit for read-only project audits and release hygiene.
 
 `dev-kit` helps check whether a local project is ready to ship by inspecting the files that usually drift during release work: version labels, baseline docs, browser entry files, service worker labels, smoke scripts, and generated audit reports. It is built as reusable developer tooling, not a one-off DungeonDex helper.
 
+## Try It First
+
+From the `dev-kit` repo folder, install in editable mode and run a DungeonDex-style audit:
+
+```powershell
+python -m pip install -e .
+python -m dev_kit audit --path ..\DungeonDex --profile dungeondex
+```
+
+Generate a Markdown report:
+
+```powershell
+python -m dev_kit report --path ..\DungeonDex --profile dungeondex --output .\devkit-report.md
+```
+
+Run the test suite:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+Current status: active tooling repo. The current CLI supports `audit`, `version`, and `report`. Portfolio-wide sibling-repo audit mode is still planned, not implemented.
+
 ## What it audits
 
 `dev-kit` currently focuses on practical release-hygiene checks:
