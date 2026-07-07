@@ -9,10 +9,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from dev_kit.auditors import (
+    audit_portfolio,
     audit_project,
     check_version_sync,
     extract_version_labels,
     render_markdown,
+    render_portfolio_markdown,
     resolve_audit_profile,
     summarize,
     summarize_by_group,
@@ -197,6 +199,44 @@ class AuditorTests(unittest.TestCase):
         self.assertEqual(exit_code, EXIT_SUCCESS, f"dungeondex alias should pass for browser_game_static_project. Output:\n{output}")
         self.assertIn("[PASS] audit profile", output)
         self.assertIn("browser-game-static", output)
+
+    def test_portfolio_audit_finds_sibling_projects_without_modifying_them(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            parent = Path(temp_dir)
+            complete = parent / "complete-app"
+            partial = parent / "partial-app"
+            complete.mkdir()
+            partial.mkdir()
+            (complete / "README.md").write_text("# Complete\n\n## Try It First\n\n```bash\nnpm run build\n```\n", encoding="utf-8")
+            (complete / "package.json").write_text('{"scripts":{"build":"vite build"}}', encoding="utf-8")
+            (partial / "README.md").write_text("# Partial\n", encoding="utf-8")
+            before = snapshot_fixture(parent)
+
+            summaries = audit_portfolio(parent)
+            names = [summary.name for summary in summaries]
+
+            self.assertEqual(names, ["complete-app", "partial-app"])
+            self.assertEqual(summaries[0].status, "PASS")
+            self.assertEqual(summaries[1].status, "WARN")
+            self.assertEqual(snapshot_fixture(parent), before, "portfolio audit should not modify scanned projects")
+
+    def test_portfolio_cli_writes_report(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            parent = Path(temp_dir)
+            project = parent / "demo-app"
+            project.mkdir()
+            (project / "README.md").write_text("# Demo\n\n## Try It First\n\nOpen `index.html`.\n", encoding="utf-8")
+            (project / "index.html").write_text("<!doctype html>", encoding="utf-8")
+            output_path = parent / "portfolio-report.md"
+
+            exit_code, output = self.run_cli("portfolio", "--path", str(parent), "--output", str(output_path))
+            report = output_path.read_text(encoding="utf-8")
+
+        self.assertEqual(exit_code, EXIT_SUCCESS, f"portfolio CLI should pass for demo-app. Output:\n{output}")
+        self.assertIn("Portfolio projects: 1", output)
+        self.assertIn("Wrote portfolio report:", output)
+        self.assertIn("# dev-kit Portfolio Audit Report", report)
+        self.assertIn("demo-app", report)
 
     def test_audit_cli_invalid_path_returns_usage_error_without_traceback(self):
         missing_path = fixture_path("does_not_exist")
