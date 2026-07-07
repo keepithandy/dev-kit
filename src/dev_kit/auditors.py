@@ -11,6 +11,18 @@ from typing import Iterable
 VERSION_PATTERN = re.compile(r"v\d+\.\d+\.\d+(?:[A-Za-z0-9._-]+)?")
 STANDARD_RUNTIME_FILES = ("index.html", "sw.js", "app.js")
 BASELINE_FILES = ("VERSION.md", *STANDARD_RUNTIME_FILES)
+PROJECT_MARKER_FILES = ("README.md", "package.json", "pyproject.toml", "index.html", "VERSION.md")
+RUN_INSTRUCTION_MARKERS = (
+    "try it first",
+    "quick start",
+    "how to run",
+    "run locally",
+    "open `index.html`",
+    "open index.html",
+    "npm run",
+    "python -m",
+)
+CHECK_MARKERS = ("npm test", "npm run test", "npm run smoke", "npm run build", "python -m unittest", "pytest")
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,23 @@ class CheckResult:
     @property
     def failed(self) -> bool:
         return self.status == "FAIL"
+
+
+@dataclass(frozen=True)
+class PortfolioProjectSummary:
+    """Portfolio-level read-only summary for one sibling project."""
+
+    name: str
+    path: Path
+    results: tuple[CheckResult, ...]
+
+    @property
+    def counts(self) -> dict[str, int]:
+        return summarize(self.results)
+
+    @property
+    def status(self) -> str:
+        return _overall_status(self.counts)
 
 
 def _read_text(path: Path) -> str:
@@ -201,6 +230,93 @@ def audit_project(root: str | Path, profile: str = "default") -> list[CheckResul
     ]
 
 
+def _looks_like_project(path: Path) -> bool:
+    if not path.is_dir() or path.name.startswith("."):
+        return False
+    if (path / ".git").exists():
+        return True
+    return any((path / marker).exists() for marker in PROJECT_MARKER_FILES)
+
+
+def discover_portfolio_projects(parent: str | Path) -> list[Path]:
+    """Return immediate child folders that look like project roots."""
+
+    parent_path = Path(parent).expanduser().resolve()
+    if not parent_path.exists() or not parent_path.is_dir():
+        return []
+    return sorted((child for child in parent_path.iterdir() if _looks_like_project(child)), key=lambda path: path.name.lower())
+
+
+def _check_portfolio_readme(root: Path) -> CheckResult:
+    readme = root / "README.md"
+    if readme.exists():
+        return CheckResult("portfolio:README", "PASS", "README.md is present.")
+    return CheckResult("portfolio:README", "WARN", "README.md is missing.")
+
+
+def _check_portfolio_run_instructions(root: Path) -> CheckResult:
+    readme = root / "README.md"
+    if not readme.exists():
+        return CheckResult("portfolio:run instructions", "WARN", "Cannot check run instructions without README.md.")
+
+    text = _read_text(readme).lower()
+    if any(marker in text for marker in RUN_INSTRUCTION_MARKERS):
+        return CheckResult("portfolio:run instructions", "PASS", "README includes a run or quick-start path.")
+    return CheckResult("portfolio:run instructions", "WARN", "README does not expose an obvious run or quick-start path.")
+
+
+def _check_portfolio_checks(root: Path) -> CheckResult:
+    markers: list[str] = []
+
+    if any(path.is_file() for path in root.glob("smoke*")):
+        markers.append("root smoke file")
+    if (root / "tests").is_dir():
+        markers.append("tests directory")
+
+    package_json = root / "package.json"
+    if package_json.exists():
+        package_text = _read_text(package_json).lower()
+        if any(marker in package_text for marker in ("\"test\"", "\"smoke\"", "\"build\"")):
+            markers.append("package script")
+
+    readme = root / "README.md"
+    if readme.exists():
+        readme_text = _read_text(readme).lower()
+        if any(marker in readme_text for marker in CHECK_MARKERS):
+            markers.append("README check command")
+
+    if markers:
+        found = ", ".join(sorted(set(markers)))
+        return CheckResult("portfolio:checks", "PASS", f"Found validation signal(s): {found}.")
+    return CheckResult("portfolio:checks", "WARN", "No obvious test, smoke, build, or validation command found.")
+
+
+def audit_portfolio_project(root: str | Path) -> list[CheckResult]:
+    """Run lightweight read-only portfolio checks against one project folder."""
+
+    project_root = Path(root).expanduser().resolve()
+    path_result = check_project_path(project_root)
+    if path_result.failed:
+        return [path_result]
+
+    return [
+        path_result,
+        _check_portfolio_readme(project_root),
+        _check_portfolio_run_instructions(project_root),
+        _check_portfolio_checks(project_root),
+    ]
+
+
+def audit_portfolio(parent: str | Path) -> list[PortfolioProjectSummary]:
+    """Scan immediate sibling project folders and summarize portfolio hygiene."""
+
+    summaries: list[PortfolioProjectSummary] = []
+    for project_root in discover_portfolio_projects(parent):
+        results = tuple(audit_portfolio_project(project_root))
+        summaries.append(PortfolioProjectSummary(project_root.name, project_root, results))
+    return summaries
+
+
 def summarize(results: Iterable[CheckResult]) -> dict[str, int]:
     summary = {"PASS": 0, "WARN": 0, "FAIL": 0}
     for result in results:
@@ -219,6 +335,8 @@ def _result_group(result: CheckResult) -> str:
         return "Version labels"
     if result.name.startswith("profile:"):
         return "Profile checks"
+    if result.name.startswith("portfolio:"):
+        return "Portfolio checks"
     return "Other checks"
 
 
@@ -269,6 +387,15 @@ def _next_actions(results: list[CheckResult]) -> list[str]:
 
     if any(result.name == "profile:smoke scripts" for result in warnings):
         actions.append("Add or restore at least one root-level smoke script if this project should have a smoke-test safety net.")
+
+    if any(result.name == "portfolio:README" for result in warnings):
+        actions.append("Add a README.md so the project has a clear public entry point.")
+
+    if any(result.name == "portfolio:run instructions" for result in warnings):
+        actions.append("Add a visible Try It First, Quick Start, or How To Run section.")
+
+    if any(result.name == "portfolio:checks" for result in warnings):
+        actions.append("Add or document at least one test, smoke, build, or validation command.")
 
     if failures and not actions:
         actions.append("Fix failing checks before treating this project as release-ready.")
@@ -334,4 +461,57 @@ def render_markdown(
         lines.append(f"- **{result.status}** `{result.name}` - {result.detail}")
 
     lines.append("")
+    return "\n".join(lines)
+
+
+def render_portfolio_markdown(
+    parent: str | Path,
+    summaries: Iterable[PortfolioProjectSummary],
+    generated_at: datetime | str | None = None,
+) -> str:
+    summary_list = list(summaries)
+    parent_path = Path(parent).expanduser().resolve()
+    all_results = [result for summary in summary_list for result in summary.results]
+    counts = summarize(all_results)
+    status = _overall_status(counts) if summary_list else "WARN"
+
+    lines = [
+        "# dev-kit Portfolio Audit Report",
+        "",
+        f"- Parent folder: `{parent_path}`",
+        f"- Generated: `{_format_generated_at(generated_at)}`",
+        f"- Projects found: **{len(summary_list)}**",
+        f"- Overall status: **{status}**",
+        "",
+        "## Project Summary",
+        "",
+        "| Project | Status | PASS | WARN | FAIL | Path |",
+        "| --- | --- | ---: | ---: | ---: | --- |",
+    ]
+
+    if not summary_list:
+        lines.append("| _No project folders found_ | WARN | 0 | 1 | 0 | _n/a_ |")
+    else:
+        for summary in summary_list:
+            project_counts = summary.counts
+            relative_path = summary.path.relative_to(parent_path).as_posix()
+            lines.append(
+                f"| {summary.name} | {summary.status} | {project_counts.get('PASS', 0)} | "
+                f"{project_counts.get('WARN', 0)} | {project_counts.get('FAIL', 0)} | `{relative_path}` |"
+            )
+
+    lines.extend(["", "## Project Details", ""])
+
+    if not summary_list:
+        lines.append("- No immediate child folders looked like projects. Add repos next to each other and run the portfolio command again.")
+    else:
+        for summary in summary_list:
+            lines.extend([f"### {summary.name}", ""])
+            for result in summary.results:
+                lines.append(f"- **{result.status}** `{result.name}` - {result.detail}")
+            lines.extend(["", "Next actions:"])
+            for action in _next_actions(list(summary.results)):
+                lines.append(f"- {action}")
+            lines.append("")
+
     return "\n".join(lines)
